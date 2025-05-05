@@ -1,0 +1,9 @@
+/* Member Prime – cart banner styling */
+.memberprime-banner {
+    background: #f6f6f6;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-align: center;
+    margin-top: 10px;
+}
