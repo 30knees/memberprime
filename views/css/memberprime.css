@@ -1,3 +1,12 @@
+/* Banner styling for Member Prime – keep it minimal */
+.memberprime-banner{
+    background:#f6f6f6;
+    padding:15px;
+    border:1px solid #ddd;
+    text-align:center;
+    border-radius:4px;
+}
+
 .countdownHolder{
 	width: 400px;  /* WIDTH OF COUNTDOWN */
 	margin: 0 auto;
