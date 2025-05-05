@@ -10,6 +10,6 @@
 
 <!-- MODULE VIP Card -->
 <li class="loyalty">
-	<a href="{$link->getModuleLink('okom_vip', 'default')|escape:'html':'UTF-8'}" title="{l s='Ma carte VIP' mod='okom_vip'}" rel="nofollow"><i class="icon-star"></i><span>{l s='Ma carte VIP' mod='okom_vip'}</span></a>
+	<a href="{$link->getModuleLink('memberprime', 'default')|escape:'html':'UTF-8'}" title="{l s='Ma carte VIP' mod='memberprime'}" rel="nofollow"><i class="icon-star"></i><span>{l s='Ma carte VIP' mod='memberprime'}</span></a>
 </li>
 <!-- END : MODULE Card -->
