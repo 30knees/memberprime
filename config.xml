@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module>
+    <name>memberprime</name>
+    <displayName>Member Prime</displayName>
+    <version>1.0.0</version>
+    <tab>pricing_promotion</tab>
+    <author>30bees</author>
+    <need_instance>0</need_instance>
+    <description>Paid membership that grants special prices and shows savings banner in cart.</description>
+</module>
