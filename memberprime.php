@@ -55,20 +55,18 @@ class memberprime extends Module
         $this->description = $this->l('Paid membership that grants special prices and shows a “save X €” banner in cart.');
     }
 
-    /* ---------- Install / uninstall ---------- */
+/* ---------- Install / uninstall ---------- */
 
-    public function install(): bool
-    {
-        return parent::install()
-            && $this->installDb()
-            && $this->registerHook([
-                'actionValidateOrder',
-                'displayShoppingCartFooter',
-                'actionCronJob',           // CronJobs module (native) will call this
-            ])
-            && $this->setDefaults();
-    }
-
+public function install(): bool
+{
+    return parent::install()
+        && $this->installDb()
+        // one call per hook avoids comma issues
+        && $this->registerHook('actionValidateOrder')
+        && $this->registerHook('displayShoppingCartFooter')
+        && $this->registerHook('actionCronJob')
+        && $this->setDefaults();
+}
     public function uninstall(): bool
     {
         return $this->uninstallDb()
@@ -192,14 +190,14 @@ class memberprime extends Module
 
     /* ---------- Hook: cart banner ---------- */
 
-    public function hookDisplayShoppingCartFooter(array $params): string
-    {
-        /* Load banner stylesheet once per request */
-        $this->context->controller->registerStylesheet(
-            'module-memberprime-banner',
-            'modules/'.$this->name.'/views/css/front.css'',
-            ['media' => 'all', 'priority' => 150]
-        );
+public function hookDisplayShoppingCartFooter(array $params): string
+{
+    /* Load banner stylesheet once per request */
+    $this->context->controller->registerStylesheet(
+        'memberprime-banner',
+        'modules/'.$this->name.'/views/css/front.css',
+        ['media' => 'all', 'priority' => 150]
+    );
         $customer     = $this->context->customer;
         $memberGroup  = (int)Configuration::get('MP_GROUP_ID');
         $membershipId = (int)Configuration::get('MP_PRODUCT_ID');
