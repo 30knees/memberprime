@@ -191,11 +191,18 @@ public function install(): bool
 public function hookDisplayShoppingCartFooter(array $params): string
 {
     /* Load banner stylesheet once per request */
+if (method_exists($this->context->controller, 'registerStylesheet')) {
     $this->context->controller->registerStylesheet(
         'memberprime-banner',
         'modules/'.$this->name.'/views/css/front.css',
         ['media' => 'all', 'priority' => 150]
     );
+} else {
+    $this->context->controller->addCSS(
+        $this->_path.'views/css/front.css',
+        'all'
+    );
+}
         $customer     = $this->context->customer;
         $memberGroup  = (int)Configuration::get('MP_GROUP_ID');
         $membershipId = (int)Configuration::get('MP_PRODUCT_ID');
