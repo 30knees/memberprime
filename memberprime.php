@@ -64,7 +64,7 @@ class memberprime extends Module
             && $this->registerHook([
                 'actionValidateOrder',
                 'displayShoppingCartFooter',
-                'actionCustomerAccountAdd',
+                'actionCronJob',           // CronJobs module (native) will call this
             ])
             && $this->setDefaults();
     }
@@ -90,7 +90,8 @@ class memberprime extends Module
                   `id_customer`    INT UNSIGNED NOT NULL,
                   `expiration`     DATETIME      NOT NULL,
                   PRIMARY KEY (`id_memberprime`),
-                  UNIQUE KEY `customer` (`id_customer`)
+                  UNIQUE KEY `customer` (`id_customer`),
+                  KEY `exp_idx` (`expiration`)         -- speeds up nightly prune
                 ) ENGINE="._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;';
         return Db::getInstance()->execute($sql);
     }
@@ -193,6 +194,12 @@ class memberprime extends Module
 
     public function hookDisplayShoppingCartFooter(array $params): string
     {
+        /* Load banner stylesheet once per request */
+        $this->context->controller->registerStylesheet(
+            'module-memberprime-banner',
+            'modules/'.$this->name.'/assets/css/front.css',
+            ['media' => 'all', 'priority' => 150]
+        );
         $customer     = $this->context->customer;
         $memberGroup  = (int)Configuration::get('MP_GROUP_ID');
         $membershipId = (int)Configuration::get('MP_PRODUCT_ID');
@@ -232,8 +239,12 @@ class memberprime extends Module
         ]);
         return $this->display(__FILE__, 'views/templates/hook/cartSavings.tpl');
     }
-
-    /* ---------- Hook: nightly prune (call via cron or CronJobs module) ---------- */
+/* ---------- Hook called by the native CronJobs module ---------- */
+    public function hookActionCronJob(array $params): void
+    {
+        $this->cronPruneExpired();
+    }
+/* ---------- Hook: nightly prune (call via cron or CronJobs module) ---------- */
 
     public function cronPruneExpired(): void
     {
