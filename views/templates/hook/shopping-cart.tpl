@@ -14,20 +14,20 @@
 	{if $is_vip == false || $exprired == true}
 		<div class="row">
 				<div class="col-sm-3">
-					<img class="img-responsive" width="200"src='{$modules_dir}/okom_vip/img/vip.png' alt='{l s='Devenez client Vip' mod='okom_vip'}'>
+					<img class="img-responsive" width="200"src='{$modules_dir}/memberprime/img/vip.png' alt='{l s='Devenez client Vip' mod='memberprime'}'>
 				</div>
 			    <div class="col-sm-8">
 
-				<h3>{l s='Pas encore membre VIP, profitez d\'avantages avec notre carte VIP !' mod='okom_vip'}</h3>
-				{l s='Livraison Offerte dès 25€' mod='okom_vip'}<br/>
-				{l s='Commande prioritaire' mod='okom_vip'}<br/>
-				{l s='Des offres de folies réservées aux membres VIP' mod='okom_vip'}<br/><br/>
-				<a class="button button-small btn btn-default" href="{$vip_product_url}"><span>{l s='Devenir membre VIP !' mod='okom_vip'}</span></a><br/><br/>
+				<h3>{l s='Pas encore membre VIP, profitez d\'avantages avec notre carte VIP !' mod='memberprime'}</h3>
+				{l s='Livraison Offerte dès 25€' mod='memberprime'}<br/>
+				{l s='Commande prioritaire' mod='memberprime'}<br/>
+				{l s='Des offres de folies réservées aux membres VIP' mod='memberprime'}<br/><br/>
+				<a class="button button-small btn btn-default" href="{$vip_product_url}"><span>{l s='Devenir membre VIP !' mod='memberprime'}</span></a><br/><br/>
 			</div>
 		</div>
 	{else}
 	
-		<div style="text-align: center"><h3>{l s='Votre carte VIP et avantages expire dans' mod='okom_vip'} </h3></div>
+		<div style="text-align: center"><h3>{l s='Votre carte VIP et avantages expire dans' mod='memberprime'} </h3></div>
 		<div id="countdownvip"></div>
 		{assign var="date_vf" value="-"|explode:$customer_vip['vip_end']}
 		{assign var="day" value=" "|explode:$date_vf[2]}
