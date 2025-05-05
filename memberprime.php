@@ -197,7 +197,7 @@ class memberprime extends Module
         /* Load banner stylesheet once per request */
         $this->context->controller->registerStylesheet(
             'module-memberprime-banner',
-            'modules/'.$this->name.'/assets/css/front.css',
+            'modules/'.$this->name.'/views/css/front.css'',
             ['media' => 'all', 'priority' => 150]
         );
         $customer     = $this->context->customer;
