@@ -22,22 +22,22 @@
  * @license   Free
  */
 
-include_once(dirname(__FILE__).'/../../okom_vip.php');
+include_once(dirname(__FILE__).'/../../memberprime.php');
 
-class okom_vipDefaultModuleFrontController extends ModuleFrontController
+class memberprimeDefaultModuleFrontController extends ModuleFrontController
 {
     public function setMedia()
     {
-        $module = 'okom_vip';
+        $module = 'memberprime';
         parent::setMedia();
         $this->addJS(_MODULE_DIR_.$module.'/views/js/jquery.countdown.js');
-        $this->addCSS(_MODULE_DIR_.$module.'/views/css/okom_vip.css');
+        $this->addCSS(_MODULE_DIR_.$module.'/views/css/memberprime.css');
     }
 
     public function initContent()
     {
         parent::initContent();
-        $module = new okom_vip();
+        $module = new memberprime();
         $customer_vip = $module->isVIP((int)$this->context->customer->id, true);
         $vip_cards = $module->getVipCards((int)$this->context->customer->id);
         
@@ -54,7 +54,7 @@ class okom_vipDefaultModuleFrontController extends ModuleFrontController
         }
 
         // @TODO Fix bad link
-        $product = new Product((int)Configuration::get('OKOM_VIP_IDPRODUCT'), true, $this->context->language->id);
+        $product = new Product((int)Configuration::get('memberprime_IDPRODUCT'), true, $this->context->language->id);
         $link = new Link();
         $vip_product_url = $link->getProductLink($product);
                 
