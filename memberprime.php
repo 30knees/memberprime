@@ -24,8 +24,6 @@
  * @license   Free
  */
 
-declare(strict_types=1);
-
 if (!defined('_TB_VERSION_')) {
     exit;
 }
@@ -120,31 +118,31 @@ public function install(): bool
         return $this->html;
     }
 
-    private function renderForm(array $cfg): string
-    {
-        $helper             = new HelperForm();
-        $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
-        $helper->token      = Tools::getAdminTokenLite('AdminModules');
-        $helper->currentIndex = AdminController::$currentIndex.'&configure='.$this->name;
-        $helper->submit_action = 'submitMemberPrime';
-        $helper->fields_value = $cfg;
+ private function renderForm(array $cfg): string
+{
+    $helper                       = new HelperForm();
+    $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
+    $helper->token                = Tools::getAdminTokenLite('AdminModules');
+    $helper->currentIndex         = AdminController::$currentIndex.'&configure='.$this->name;
+    $helper->submit_action        = 'submitMemberPrime';
+    $helper->tpl_vars             = ['fields_value' => $cfg];
 
-        $helper->tpl_vars  = ['fields_value' => $cfg];
-        $helper->fields_form = [[
-            'form' => [
-                'legend' => ['title' => $this->l('MemberPrime settings')],
-                'input'  => [
-                    ['type'=>'text','label'=>$this->l('Membership product ID'),'name'=>'MP_PRODUCT_ID','required'=>true],
-                    ['type'=>'text','label'=>$this->l('Member group ID'),'name'=>'MP_GROUP_ID','required'=>true],
-                    ['type'=>'text','label'=>$this->l('Validity (days)'),'name'=>'MP_VALID_DAYS','required'=>true],
-                    ['type'=>'text','label'=>$this->l('Order state ID that grants membership'),'name'=>'MP_PAID_STATE_ID','required'=>true],
-                ],
-                'submit' => ['title' => $this->l('Save')],
+    /* ► build the form definition locally */
+    $fields_form = [[
+        'form' => [
+            'legend' => ['title' => $this->l('MemberPrime settings')],
+            'input'  => [
+                ['type' => 'text', 'label' => $this->l('Membership product ID'),      'name' => 'MP_PRODUCT_ID',   'required' => true],
+                ['type' => 'text', 'label' => $this->l('Member group ID'),            'name' => 'MP_GROUP_ID',     'required' => true],
+                ['type' => 'text', 'label' => $this->l('Validity (days)'),            'name' => 'MP_VALID_DAYS',   'required' => true],
+                ['type' => 'text', 'label' => $this->l('Order‑state ID (grants it)'), 'name' => 'MP_PAID_STATE_ID','required' => true],
             ],
-        ]];
+            'submit' => ['title' => $this->l('Save')],
+        ],
+    ]];
 
-        return $helper->generateForm($helper->fields_form);
-    }
+    return $helper->generateForm($fields_form);   // ◄ no direct property access
+}
 
     /* ---------- Hook: paid order gives membership ---------- */
 
