@@ -30,7 +30,7 @@ if (!defined('_TB_VERSION_')) {
     exit;
 }
 
-class MemberPrime extends Module
+class memberprime extends Module
 {
     /** @var array default config keys */
     protected const CFG_KEYS = [
