@@ -1,9 +1,52 @@
-/* Member Prime – cart banner styling */
-.memberprime-banner {
-    background: #f6f6f6;
-    padding: 15px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    text-align: center;
-    margin-top: 10px;
+/* Enhanced CSS for MemberPrime banner with !important declarations 
+ * Save this to modules/memberprime/views/css/front.css
+ */
+
+/* Member Prime – cart banner styling with high specificity */
+.memberprime-banner,
+#cart_summary .memberprime-banner,
+#opc_payment_methods .memberprime-banner,
+.cart-overview .memberprime-banner,
+.shopping_cart .memberprime-banner,
+.cart-summary .memberprime-banner,
+#order-detail-content .memberprime-banner,
+.cart-container .memberprime-banner {
+    display: block !important;
+    visibility: visible !important;
+    background: #f6f6f6 !important;
+    padding: 15px !important;
+    border: 1px solid #ddd !important;
+    border-radius: 4px !important;
+    text-align: center !important;
+    margin: 10px 0 !important;
+    font-size: 14px !important;
+    color: #333 !important;
+    position: relative !important;
+    z-index: 100 !important; /* Ensure it's above other elements */
+    min-height: 50px !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    clear: both !important;
+}
+
+/* Ensure the button is visible */
+.memberprime-banner .btn,
+.memberprime-banner a.btn,
+.memberprime-banner button.btn {
+    display: inline-block !important;
+    margin-top: 10px !important;
+    padding: 6px 12px !important;
+    background-color: #5cb85c !important;
+    color: white !important;
+    border-color: #4cae4c !important;
+    text-decoration: none !important;
+    border-radius: 4px !important;
+}
+
+/* Ensure text inside is visible */
+.memberprime-banner p {
+    margin-bottom: 10px !important;
+    color: #333 !important;
+    display: block !important;
+    visibility: visible !important;
 }
