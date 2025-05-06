@@ -1,74 +1,56 @@
 <?php
-/**
- * Module Vip Card for Prestashop 1.6.x.x
- *
- * NOTICE OF LICENSE
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction,
- * including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
- * subject to the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
- * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- *
- * forked from:
- * @author    Okom3pom <contact@okom3pom.com>
- * @copyright 2008-2018 Okom3pom
- * @version   1.0.10
- * @license   Free
+/*
+ * Member Prime – paid membership that grants special prices
+ * Compatible with thirty bees 1.4/1.5 (PHP 8.2) and PrestaShop 1.6
+ * Licence: MIT
  */
 
 if (!defined('_TB_VERSION_')) {
     exit;
 }
 
-class memberprime extends Module
+class Memberprime extends Module
 {
-    /** @var array default config keys */
+    /** configuration keys */
     protected const CFG_KEYS = [
-        'MP_PRODUCT_ID',   // id_product of the membership
-        'MP_GROUP_ID',     // id_group to grant
-        'MP_VALID_DAYS',   // int – membership length
-        'MP_PAID_STATE_ID' // id_order_state that triggers assignment
+        'MP_PRODUCT_ID',
+        'MP_GROUP_ID',
+        'MP_VALID_DAYS',
+        'MP_PAID_STATE_ID',
     ];
+
+    /* ---------- basic module info ---------- */
 
     public function __construct()
     {
-        $this->name        = 'memberprime';
-        $this->tab         = 'pricing_promotion';
-        $this->version     = '1.0.0';
-        $this->author      = 'Your‑Name';
+        $this->name          = 'memberprime';
+        $this->tab           = 'pricing_promotion';
+        $this->version       = '1.0.0';
+        $this->author        = '30bees';
         $this->need_instance = 0;
-        $this->bootstrap   = true;
+        $this->bootstrap     = true;
 
         parent::__construct();
 
         $this->displayName = $this->l('Member Prime');
-        $this->description = $this->l('Paid membership that grants special prices and shows a “save X €” banner in cart.');
+        $this->description = $this->l('Sell a paid membership that puts customers in a special group and shows savings in the cart.');
     }
 
-/* ---------- Install / uninstall ---------- */
+    /* ---------- install / uninstall ---------- */
 
-public function install(): bool
-{
-    return parent::install()
-        && $this->installDb()
-        // one call per hook avoids comma issues
-        && $this->registerHook('actionValidateOrder')
-        && $this->registerHook('displayShoppingCartFooter')
-        && $this->registerHook('actionCronJob')
-        && $this->setDefaults();
-}
-    public function uninstall(): bool
+    public function install()
     {
-        return $this->uninstallDb()
-            && parent::uninstall();
+        return parent::install()
+            && $this->installDb()
+            && $this->registerHook('actionValidateOrder')
+            && $this->registerHook('displayShoppingCartFooter')
+            && $this->registerHook('actionCronJob')
+            && $this->setDefaults();
+    }
+
+    public function uninstall()
+    {
+        return $this->uninstallDb() && parent::uninstall();
     }
 
     private function setDefaults(): bool
@@ -82,26 +64,26 @@ public function install(): bool
     private function installDb(): bool
     {
         $sql = 'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_."memberprime` (
-                  `id_memberprime` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                  `id_customer`    INT UNSIGNED NOT NULL,
-                  `expiration`     DATETIME      NOT NULL,
-                  PRIMARY KEY (`id_memberprime`),
-                  UNIQUE KEY `customer` (`id_customer`),
-                  KEY `exp_idx` (`expiration`)         -- speeds up nightly prune
+                    `id_memberprime` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `id_customer`    INT UNSIGNED NOT NULL,
+                    `expiration`     DATETIME      NOT NULL,
+                    PRIMARY KEY (`id_memberprime`),
+                    UNIQUE KEY `customer` (`id_customer`),
+                    KEY `exp_idx` (`expiration`)
                 ) ENGINE="._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;';
         return Db::getInstance()->execute($sql);
     }
 
     private function uninstallDb(): bool
     {
-        $sql = 'DROP TABLE IF EXISTS `'._DB_PREFIX_."memberprime`";
-        return Db::getInstance()->execute($sql);
+        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_."memberprime`");
     }
 
-    /* ---------- Back‑office configuration ---------- */
+    /* ---------- back‑office config ---------- */
 
-    public function getContent(): string
+    public function getContent()
     {
+        $this->html = '';
         if (Tools::isSubmit('submitMemberPrime')) {
             foreach (self::CFG_KEYS as $k) {
                 Configuration::updateValue($k, Tools::getValue($k));
@@ -118,35 +100,34 @@ public function install(): bool
         return $this->html;
     }
 
- private function renderForm(array $cfg): string
-{
-    $helper                       = new HelperForm();
-    $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
-    $helper->token                = Tools::getAdminTokenLite('AdminModules');
-    $helper->currentIndex         = AdminController::$currentIndex.'&configure='.$this->name;
-    $helper->submit_action        = 'submitMemberPrime';
-    $helper->tpl_vars             = ['fields_value' => $cfg];
+    private function renderForm(array $cfg): string
+    {
+        $helper                        = new HelperForm();
+        $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
+        $helper->token                 = Tools::getAdminTokenLite('AdminModules');
+        $helper->currentIndex          = AdminController::$currentIndex.'&configure='.$this->name;
+        $helper->submit_action         = 'submitMemberPrime';
+        $helper->tpl_vars              = ['fields_value' => $cfg];
 
-    /* ► build the form definition locally */
-    $fields_form = [[
-        'form' => [
-            'legend' => ['title' => $this->l('MemberPrime settings')],
-            'input'  => [
-                ['type' => 'text', 'label' => $this->l('Membership product ID'),      'name' => 'MP_PRODUCT_ID',   'required' => true],
-                ['type' => 'text', 'label' => $this->l('Member group ID'),            'name' => 'MP_GROUP_ID',     'required' => true],
-                ['type' => 'text', 'label' => $this->l('Validity (days)'),            'name' => 'MP_VALID_DAYS',   'required' => true],
-                ['type' => 'text', 'label' => $this->l('Order‑state ID (grants it)'), 'name' => 'MP_PAID_STATE_ID','required' => true],
+        $fields_form = [[
+            'form' => [
+                'legend' => ['title' => $this->l('Member Prime settings')],
+                'input'  => [
+                    ['type'=>'text','label'=>$this->l('Membership product ID'),      'name'=>'MP_PRODUCT_ID','required'=>true],
+                    ['type'=>'text','label'=>$this->l('Member group ID'),            'name'=>'MP_GROUP_ID',  'required'=>true],
+                    ['type'=>'text','label'=>$this->l('Validity (days)'),            'name'=>'MP_VALID_DAYS','required'=>true],
+                    ['type'=>'text','label'=>$this->l('Order‑state ID (grants it)'), 'name'=>'MP_PAID_STATE_ID','required'=>true],
+                ],
+                'submit'=>['title'=>$this->l('Save')],
             ],
-            'submit' => ['title' => $this->l('Save')],
-        ],
-    ]];
+        ]];
 
-    return $helper->generateForm($fields_form);   // ◄ no direct property access
-}
+        return $helper->generateForm($fields_form);
+    }
 
-    /* ---------- Hook: paid order gives membership ---------- */
+    /* ---------- order hook: grant membership ---------- */
 
-    public function hookActionValidateOrder(array $params): void
+    public function hookActionValidateOrder($params)
     {
         $order         = new Order((int)$params['order']->id);
         $paidStateId   = (int)Configuration::get('MP_PAID_STATE_ID');
@@ -154,11 +135,10 @@ public function install(): bool
         $memberGroupId = (int)Configuration::get('MP_GROUP_ID');
         $validDays     = (int)Configuration::get('MP_VALID_DAYS');
 
-        if ($order->current_state !== $paidStateId) {
+        if (!$paidStateId || $order->current_state != $paidStateId) {
             return;
         }
 
-        // Did this order include the membership product?
         foreach ($order->getProductsDetail() as $prod) {
             if ((int)$prod['product_id'] === $productId) {
                 $this->grantMembership((int)$order->id_customer, $memberGroupId, $validDays);
@@ -174,58 +154,69 @@ public function install(): bool
             return;
         }
 
-        // add to group if not already
-        if (!$customer->isMemberOfGroup($idGroup)) {
+        if (!in_array($idGroup, $customer->getGroups(), true)) {
             $customer->addGroups([$idGroup]);
         }
 
-        // calc exp date
-        $expiration = (new DateTime())->add(new DateInterval("P{$days}D"))->format('Y-m-d H:i:s');
+        try {
+            $expiration = (new DateTime())->add(new DateInterval('P'.(int)$days.'D'))->format('Y-m-d H:i:s');
+        } catch (Exception $e) {
+            $expiration = (new DateTime())->add(new DateInterval('P365D'))->format('Y-m-d H:i:s');
+        }
 
         Db::getInstance()->execute('REPLACE INTO `'._DB_PREFIX_."memberprime`
-            (id_customer, expiration) VALUES ($idCustomer, '$expiration')");
+            (id_customer, expiration) VALUES ($idCustomer, '".pSQL($expiration)."')");
     }
 
-    /* ---------- Hook: cart banner ---------- */
+    /* ---------- cart hook: show savings banner ---------- */
 
-public function hookDisplayShoppingCartFooter(array $params): string
-{
-    /* Load banner stylesheet once per request */
-if (method_exists($this->context->controller, 'registerStylesheet')) {
-    $this->context->controller->registerStylesheet(
-        'memberprime-banner',
-        'modules/'.$this->name.'/views/css/front.css',
-        ['media' => 'all', 'priority' => 150]
-    );
-} else {
-    $this->context->controller->addCSS(
-        $this->_path.'views/css/front.css',
-        'all'
-    );
-}
+    public function hookDisplayShoppingCartFooter($params)
+    {
+        /* load banner CSS (TB 1.4 addCSS / TB 1.5+ registerStylesheet) */
+        $cssRel = 'modules/'.$this->name.'/views/css/front.css';
+        if (method_exists($this->context->controller, 'registerStylesheet')) {
+            $this->context->controller->registerStylesheet(
+                'memberprime-banner', $cssRel, ['media'=>'all','priority'=>150]
+            );
+        } else {
+            $this->context->controller->addCSS($this->_path.'views/css/front.css', 'all');
+        }
+
         $customer     = $this->context->customer;
         $memberGroup  = (int)Configuration::get('MP_GROUP_ID');
         $membershipId = (int)Configuration::get('MP_PRODUCT_ID');
         $feeProduct   = new Product($membershipId);
 
-        // if already member or not configured, nothing to show
-        if (!$membershipId || !$memberGroup || !$feeProduct->id || $customer->isLogged() && $customer->isMemberOfGroup($memberGroup)) {
+        /* already a member or mis‑configured → no banner */
+        if (
+            !$membershipId || !$memberGroup || !$feeProduct->id ||
+            ($customer->isLogged() && in_array($memberGroup, $customer->getGroups(), true))
+        ) {
             return '';
         }
 
-        // clone cart
-        $cartNormal = $this->context->cart;
-        $totalNormal = $cartNormal->getOrderTotal(true, Cart::BOTH);
+        /* normal total */
+        $cart        = $this->context->cart;
+        $totalNormal = $cart->getOrderTotal(true, Cart::BOTH);
 
-        // emulate member
-        $originalGroups = $customer->getGroups();
-        $customer->clearGroups();
-        $customer->addGroups(array_merge($originalGroups, [$memberGroup]));
-        $totalMember = $cartNormal->getOrderTotal(true, Cart::BOTH);
+        /* simulate member total using a cloned cart */
+        $memberCart = new Cart($cart->id);
+        $memberCart->id_customer         = $customer->id ?: 0;
+        $memberCart->id_address_delivery = $cart->id_address_delivery;
+        $memberCart->id_address_invoice  = $cart->id_address_invoice;
+        $memberCart->id_currency         = $cart->id_currency;
+        $memberCart->id_lang             = $cart->id_lang;
+        $memberCart->save();
 
-        // roll back groups
-        $customer->clearGroups();
-        $customer->addGroups($originalGroups);
+        $savedGroups = $customer->isLogged() ? $customer->getGroups() : [];
+        if ($customer->isLogged() && !in_array($memberGroup, $savedGroups, true)) {
+            $customer->addGroups([$memberGroup]);
+        }
+        $totalMember = $memberCart->getOrderTotal(true, Cart::BOTH);
+        if ($customer->isLogged()) {
+            $customer->clearGroups();
+            $customer->addGroups($savedGroups);
+        }
 
         $saving = $totalNormal - $totalMember;
         if ($saving <= 0.01) {
@@ -235,19 +226,21 @@ if (method_exists($this->context->controller, 'registerStylesheet')) {
         $ordersToBreakEven = (int)ceil($feeProduct->getPrice() / $saving);
 
         $this->context->smarty->assign([
-            'membership_price'   => Tools::displayPrice($feeProduct->getPrice()),
-            'saving'             => Tools::displayPrice($saving),
-            'orders_to_breakeven'=> $ordersToBreakEven,
-            'membership_link'    => $this->context->link->getProductLink($feeProduct),
+            'membership_price'    => Tools::displayPrice($feeProduct->getPrice()),
+            'saving'              => Tools::displayPrice($saving),
+            'orders_to_breakeven' => $ordersToBreakEven,
+            'membership_link'     => $this->context->link->getProductLink($feeProduct),
         ]);
+
         return $this->display(__FILE__, 'views/templates/hook/cartSavings.tpl');
     }
-/* ---------- Hook called by the native CronJobs module ---------- */
-    public function hookActionCronJob(array $params): void
+
+    /* ---------- cron hook & manual cron ---------- */
+
+    public function hookActionCronJob($params)
     {
         $this->cronPruneExpired();
     }
-/* ---------- Hook: nightly prune (call via cron or CronJobs module) ---------- */
 
     public function cronPruneExpired(): void
     {
@@ -255,11 +248,12 @@ if (method_exists($this->context->controller, 'registerStylesheet')) {
         $rows = Db::getInstance()->executeS('SELECT id_customer FROM `'._DB_PREFIX_."memberprime`
                                              WHERE expiration < NOW()");
         foreach ($rows as $row) {
-            $customer = new Customer((int)$row['id_customer']);
-            if ($customer->id && $customer->isMemberOfGroup($idGroup)) {
+            $idCust   = (int)$row['id_customer'];
+            $customer = new Customer($idCust);
+            if ($customer->id && in_array($idGroup, $customer->getGroups(), true)) {
                 $customer->removeGroups([$idGroup]);
             }
-            Db::getInstance()->delete('memberprime', 'id_customer='.(int)$row['id_customer']);
+            Db::getInstance()->delete('memberprime', 'id_customer='.(int)$idCust);
         }
     }
 }
