@@ -2,7 +2,7 @@
 /*
  * Member Prime – paid membership that grants special prices
  * Compatible with thirty bees 1.4/1.5 (PHP 8.2) and PrestaShop 1.6
- * Licence: MIT
+ * Licence: Free
  */
 
 if (!defined('_TB_VERSION_')) {
