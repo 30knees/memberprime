@@ -2,7 +2,7 @@
 /*
  * Member Prime – paid membership that grants special prices
  * Compatible with thirty bees 1.4 / 1.5 (PHP 8.2) and PrestaShop 1.6
- * Licence: Free
+ * With temporary membership when product is in cart
  */
 
 if (!defined('_TB_VERSION_')) {
@@ -32,7 +32,7 @@ class Memberprime extends Module
     {
         $this->name          = 'memberprime';
         $this->tab           = 'pricing_promotion';
-        $this->version       = '1.0.3';
+        $this->version       = '1.0.7';
         $this->author        = '30bees';
         $this->bootstrap     = true;
         parent::__construct();
@@ -41,6 +41,9 @@ class Memberprime extends Module
         $this->description = $this->l(
             'Sell a paid membership that puts customers in a special group and shows savings in the cart.'
         );
+        
+        // Check cart on every page load to update temporary membership status
+        $this->updateTemporaryMembership();
     }
 
     /* ------------ install / uninstall ------------ */
@@ -55,6 +58,8 @@ class Memberprime extends Module
             && $this->registerHook('displayTop')             // Try more hooks
             && $this->registerHook('displayCartExtraProductActions')
             && $this->registerHook('displayHeader')          // enqueue CSS early
+            && $this->registerHook('actionCartSave')         // Cart update hook
+            && $this->registerHook('actionAuthentication')   // Login hook
             && $this->registerHook('actionCronJob')
             && $this->setDefaults();
     }
@@ -136,10 +141,141 @@ class Memberprime extends Module
         return $helper->generateForm($fields_form);
     }
 
+    /**
+     * Hook into cart save to check for membership product
+     */
+    public function hookActionCartSave($params)
+    {
+        $this->updateTemporaryMembership();
+    }
+
+    /**
+     * Hook into authentication to restore temporary membership after login
+     */
+    public function hookActionAuthentication($params)
+    {
+        $this->updateTemporaryMembership();
+    }
+
+    /**
+     * Check if cart contains membership product and update temporary membership status
+     * Then force a page reload to refresh prices
+     */
+    private function updateTemporaryMembership()
+    {
+        // Get configuration
+        $membershipProductId = (int)Configuration::get('MP_PRODUCT_ID');
+        $memberGroupId = (int)Configuration::get('MP_GROUP_ID');
+        
+        if (!$membershipProductId || !$memberGroupId) {
+            return;
+        }
+
+        // Skip if customer isn't logged in
+        if (!isset($this->context->customer) || !$this->context->customer->id) {
+            return;
+        }
+        
+        // Get customer and cart
+        $customer = $this->context->customer;
+        $cart = $this->context->cart;
+        
+        if (!$cart || !$cart->id) {
+            return;
+        }
+        
+        // Check if customer already has a real membership
+        $hasMembership = Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `'._DB_PREFIX_."memberprime` 
+            WHERE id_customer = ".(int)$customer->id." 
+            AND expiration > NOW()"
+        );
+        
+        if ($hasMembership) {
+            // Customer has a real membership, nothing to do
+            $this->log("Customer {$customer->id} already has an active membership");
+            return;
+        }
+        
+        // Check if membership product is in cart
+        $membershipInCart = false;
+        $cartProducts = $cart->getProducts();
+        
+        foreach ($cartProducts as $product) {
+            if ((int)$product['id_product'] === $membershipProductId) {
+                $membershipInCart = true;
+                break;
+            }
+        }
+        
+        // Customer's current groups
+        $currentGroups = $customer->getGroups();
+        $inMemberGroup = in_array($memberGroupId, $currentGroups, true);
+        
+        // Debug info
+        $this->log("Membership in cart: " . ($membershipInCart ? 'Yes' : 'No'));
+        $this->log("Customer in member group: " . ($inMemberGroup ? 'Yes' : 'No'));
+        
+        // Need to update customer's group membership
+        if ($membershipInCart && !$inMemberGroup) {
+            // Add customer to member group temporarily
+            $this->log("Adding customer {$customer->id} to member group temporarily (product in cart)");
+            
+            // Add to group 
+            $customer->addGroups([$memberGroupId]);
+            
+            // Force the context to update
+            $this->context->customer = new Customer((int)$customer->id);
+            
+            // Save a cookie to track temporary membership
+            $this->context->cookie->mp_temp_membership = true;
+            $this->context->cookie->write();
+            
+            // Need to reload page to see the changes
+            if (!isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                // Check if we're just after adding membership to cart
+                if (isset($_GET['add']) && (int)$_GET['add'] === $membershipProductId) {
+                    // Redirect to the cart page to see member prices
+                    if (!headers_sent()) {
+                        Tools::redirect('index.php?controller=cart');
+                        exit;
+                    }
+                } else {
+                    // Reload the current page to update prices
+                    if (!headers_sent()) {
+                        Tools::redirect($_SERVER['REQUEST_URI']);
+                        exit;
+                    }
+                }
+            }
+        } elseif (!$membershipInCart && $inMemberGroup && isset($this->context->cookie->mp_temp_membership)) {
+            // Remove temporary membership
+            $this->log("Removing customer {$customer->id} from member group (product removed from cart)");
+            $customer->removeGroups([$memberGroupId]);
+            
+            // Remove cookie
+            unset($this->context->cookie->mp_temp_membership);
+            $this->context->cookie->write();
+            
+            // Force the context to update
+            $this->context->customer = new Customer((int)$customer->id);
+            
+            // Need to reload page to see the changes
+            if (!isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                // We need to reload the current page to update prices
+                if (!headers_sent() && isset($_GET['delete']) && (int)$_GET['delete'] === $membershipProductId) {
+                    $currentUrl = $_SERVER['REQUEST_URI'];
+                    Tools::redirect($currentUrl);
+                    exit;
+                }
+            }
+        }
+    }
+
     /* ------------ order hook: grant membership ------------ */
     public function hookActionValidateOrder($params)
     {
-        $order       = new Order((int)$params['order']->id);
+        $order = new Order((int)$params['order']->id);
         $paidStateId = (int)Configuration::get('MP_PAID_STATE_ID');
         if (!$paidStateId || $order->current_state != $paidStateId) {
             return;
@@ -153,17 +289,24 @@ class Memberprime extends Module
                     (int)Configuration::get('MP_GROUP_ID'),
                     (int)Configuration::get('MP_VALID_DAYS')
                 );
+                
+                // Remove temporary membership flag since they now have a real membership
+                if (isset($this->context->cookie->mp_temp_membership)) {
+                    unset($this->context->cookie->mp_temp_membership);
+                    $this->context->cookie->write();
+                }
+                
                 break;
             }
         }
     }
 
-    private function grantMembership(int $idCustomer,int $idGroup,int $days): void
+    private function grantMembership(int $idCustomer, int $idGroup, int $days): void
     {
         $cust = new Customer($idCustomer);
         if (!$cust->id) {return;}
 
-        if (!in_array($idGroup,$cust->getGroups(),true)) {
+        if (!in_array($idGroup, $cust->getGroups(), true)) {
             $cust->addGroups([$idGroup]);
         }
 
@@ -173,92 +316,356 @@ class Memberprime extends Module
         $this->log("membership granted to $idCustomer until $exp");
     }
 
-    /* ------------ header hook: enqueue CSS early and add JS fallback ------------ */
+    /* ------------ header hook: enqueue CSS early ------------ */
     public function hookDisplayHeader()
-    {
-        // Only load on cart and order pages
-        if (!in_array($this->context->controller->php_self, ['cart', 'order'])) {
-            return;
-        }
-        
-        // Add CSS
-        $css = $this->_path.'views/css/front.css';
-        if (method_exists($this->context->controller, 'registerStylesheet')) {
-            $this->context->controller->registerStylesheet('memberprime-banner', $css, ['media'=>'all']);
-        } else {
-            $this->context->controller->addCSS($css, 'all');
-        }
-        
-        // Check if we should show the banner
-        $cust = $this->context->customer;
-        $grp = (int)Configuration::get('MP_GROUP_ID');
-        
-        // If customer is already a member, don't add the JS
-        if ($cust->isLogged() && in_array($grp, $cust->getGroups(), true)) {
-            return;
-        }
-        
-        // Add JavaScript to inject the banner if hooks aren't working
-        $cart = $this->context->cart;
-        if (!$cart || !$cart->id) {
-            return;
-        }
-        
-        // Generate the banner content
-        $banner = $this->renderSavingsBanner();
-        
-        if (!empty($banner)) {
-            // Escape for JavaScript insertion
-            $banner = addslashes(str_replace(["\r", "\n"], '', $banner));
-            
-            // Add JavaScript to inject the banner
-            return '<script type="text/javascript">
-                document.addEventListener("DOMContentLoaded", function() {
-                    // Try to insert before the cart summary
-                    var banner = \'' . $banner . '\';
-                    
-                    // Target common cart elements from various themes
-                    var targets = [
-                        "#cart_summary",
-                        ".cart-overview",
-                        ".shopping_cart",
-                        ".cart-container",
-                        "#order-detail-content",
-                        ".delivery_options_address",
-                        ".checkout-step",
-                        "[id^=cart]",
-                        ".order-confirmation"
-                    ];
-                    
-                    // Try each target
-                    var inserted = false;
-                    for (var i = 0; i < targets.length; i++) {
-                        var target = document.querySelector(targets[i]);
-                        if (target) {
-                            // Create a container
-                            var container = document.createElement("div");
-                            container.innerHTML = banner;
-                            target.parentNode.insertBefore(container, target);
-                            inserted = true;
-                            break;
+{
+    // Always register the CSS for cart and order pages  
+    if (!in_array($this->context->controller->php_self, ['cart', 'order', 'product', 'category', 'search'])) {
+        return;
+    }
+    
+    $css = $this->_path.'views/css/front.css';
+    if (method_exists($this->context->controller, 'registerStylesheet')) {
+        $this->context->controller->registerStylesheet('memberprime-banner', $css, ['media'=>'all']);
+    } else {
+        $this->context->controller->addCSS($css, 'all');
+    }
+    
+    // Check if we need to apply the member price discount
+    $cust = $this->context->customer;
+    $grp = (int)Configuration::get('MP_GROUP_ID');
+    $prodId = (int)Configuration::get('MP_PRODUCT_ID');
+    
+    // Initialize output variable to collect all JavaScript
+    $output = '';
+    
+    // Add JavaScript to refresh the page when the membership product is added to cart
+    if ($prodId) {
+        $output .= '<script type="text/javascript">
+            document.addEventListener("DOMContentLoaded", function() {
+                // Listen for add to cart button clicks
+                var addToCartButtons = document.querySelectorAll(".ajax_add_to_cart_button, .add-to-cart, [name=Submit], #add_to_cart button");
+                addToCartButtons.forEach(function(button) {
+                    button.addEventListener("click", function() {
+                        // Check if this is the membership product
+                        var productId = this.getAttribute("data-id-product");
+                        if (!productId) {
+                            var form = this.closest("form");
+                            if (form) {
+                                var productInput = form.querySelector("[name=id_product]");
+                                if (productInput) {
+                                    productId = productInput.value;
+                                }
+                            }
                         }
+                        
+                        if (productId == ' . $prodId . ') {
+                            // This is the membership product, handle special
+                            setTimeout(function() {
+                                // Reload the page after a short delay
+                                window.location.reload();
+                            }, 500);
+                        }
+                    });
+                });
+            });
+        </script>';
+    }
+    
+    // Check if we need to apply temporary member pricing
+    $cart = $this->context->cart;
+    if (!$cart || !$cart->id) {
+		// If showing member prices, add this simple price override script
+if ($showMemberPrices) {
+    $memberDiscount = $this->getMemberDiscountRate();
+    
+    $output .= '<script type="text/javascript">
+        // Simpler price override implementation 
+        document.addEventListener("DOMContentLoaded", function() {
+            console.log("MemberPrime: Applying member pricing");
+            
+            // Apply discount to all price elements
+            function applyMemberDiscount() {
+                console.log("MemberPrime: Searching for price elements");
+                
+                // Find all price elements using common selectors
+                var priceSelectors = [
+                    ".price", ".price-tag", ".product-price", 
+                    ".our_price_display", "#our_price_display",
+                    "[itemprop=\'price\']", ".content_price span", 
+                    ".price_display", ".price_container",
+                    ".cart_total_price", ".total_price", 
+                    ".cart-prices-line .price",
+                    ".cart_block_product_price", ".cart_unit .price",
+                    ".cart-info .price", ".cart-prices-line .value"
+                ];
+                
+                // Use a more comprehensive selector
+                var allPriceElements = document.querySelectorAll(priceSelectors.join(","));
+                console.log("MemberPrime: Found " + allPriceElements.length + " price elements");
+                
+                // Apply discount to each price element
+                allPriceElements.forEach(function(element) {
+                    // Skip if this element has already been processed
+                    if (element.classList.contains("member-price-processed")) {
+                        return;
                     }
                     
-                    // If all else fails, try appending to the body
-                    if (!inserted) {
-                        console.log("MemberPrime: No target found, appending to body");
-                        var container = document.createElement("div");
-                        container.innerHTML = banner;
-                        container.style.margin = "20px 0";
-                        var body = document.querySelector("body");
-                        if (body) {
-                            body.appendChild(container);
-                        }
+                    // Skip elements inside .memberprime-banner
+                    if (element.closest(".memberprime-banner")) {
+                        return;
+                    }
+                    
+                    // Get the element\'s text content (the price)
+                    var priceText = element.textContent.trim();
+                    console.log("MemberPrime: Found price: " + priceText);
+                    
+                    // Extract the price value - handle different number formats
+                    var price = parseFloat(priceText.replace(/[^0-9.,]/g, "")
+                        .replace(",", "."));
+                    
+                    if (!isNaN(price) && price > 0) {
+                        // Calculate the discounted price
+                        var discountRate = ' . $memberDiscount . ';
+                        var discountedPrice = price * (1 - discountRate / 100);
+                        
+                        // Find the currency symbol/format
+                        // This assumes currency symbol is everything that\'s not a digit, dot or comma
+                        var currencyFormat = priceText.match(/[^0-9.,]+/g);
+                        var currencySymbol = currencyFormat ? currencyFormat.join("") : "";
+                        
+                        // Format the new price with the same currency symbol
+                        var formattedDiscountedPrice = currencySymbol + discountedPrice.toFixed(2);
+                        
+                        // Save original content for reference
+                        var originalPrice = priceText;
+                        
+                        // Create new elements for display
+                        var container = document.createElement("span");
+                        container.classList.add("member-price-container");
+                        
+                        var originalPriceEl = document.createElement("span");
+                        originalPriceEl.classList.add("original-price");
+                        originalPriceEl.style.textDecoration = "line-through";
+                        originalPriceEl.style.color = "#999";
+                        originalPriceEl.style.fontSize = "0.8em";
+                        originalPriceEl.textContent = originalPrice;
+                        
+                        var discountedPriceEl = document.createElement("span");
+                        discountedPriceEl.classList.add("member-price");
+                        discountedPriceEl.style.color = "#c00";
+                        discountedPriceEl.style.fontWeight = "bold";
+                        discountedPriceEl.textContent = formattedDiscountedPrice;
+                        
+                        // Add to container
+                        container.appendChild(originalPriceEl);
+                        container.appendChild(document.createTextNode(" "));
+                        container.appendChild(discountedPriceEl);
+                        
+                        // Replace the original content
+                        element.innerHTML = "";
+                        element.appendChild(container);
+                        
+                        // Mark as processed
+                        element.classList.add("member-price-processed");
+                        
+                        console.log("MemberPrime: Replaced price: " + originalPrice + 
+                            " with discounted price: " + formattedDiscountedPrice);
                     }
                 });
-            </script>';
+                
+                // Re-run every second to catch dynamically added content
+                setTimeout(applyMemberDiscount, 1000);
+            }
+            
+            // Start the process
+            applyMemberDiscount();
+        });
+    </script>';
+}
+        return $output;
+    }
+    
+    // Check if membership product is in the cart
+    $membershipInCart = false;
+    foreach ($cart->getProducts() as $product) {
+        if ((int)$product['id_product'] === $prodId) {
+            $membershipInCart = true;
+            break;
         }
     }
+    
+    // Check if customer is already a permanent member
+    $hasPermanentMembership = false;
+    if ($cust->isLogged()) {
+        $hasPermanentMembership = (bool)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . "memberprime` 
+            WHERE id_customer = " . (int)$cust->id . " 
+            AND expiration > NOW()"
+        );
+    }
+    
+    // If customer is a member or has membership in cart, we'll show member prices
+    $showMemberPrices = $hasPermanentMembership || $membershipInCart;
+    
+    // Log status
+    $this->log("Show member prices: " . ($showMemberPrices ? 'Yes' : 'No'));
+    $this->log("Membership in cart: " . ($membershipInCart ? 'Yes' : 'No'));
+    $this->log("Has permanent membership: " . ($hasPermanentMembership ? 'Yes' : 'No'));
+    
+    if ($showMemberPrices) {
+        // Add JavaScript to override prices on the page
+        $output .= '<script type="text/javascript">
+            // Load member prices
+            var memberGroupId = ' . $grp . ';
+            var membershipProductId = ' . $prodId . ';
+            
+            document.addEventListener("DOMContentLoaded", function() {
+                // Add a flag to indicate we\'re viewing member prices
+                document.body.classList.add("viewing-member-prices");
+                
+                // Get all products on the page
+                var products = document.querySelectorAll(".product-container, [data-id-product]");
+                products.forEach(function(product) {
+                    var productId = product.getAttribute("data-id-product");
+                    if (!productId) {
+                        var link = product.querySelector("a.product_img_link, a.product-name, a.product_name");
+                        if (link) {
+                            var href = link.getAttribute("href");
+                            var match = href && href.match(/id_product=(\d+)/);
+                            if (match) {
+                                productId = match[1];
+                            }
+                        }
+                    }
+                    
+                    // Skip the membership product itself
+                    if (productId == membershipProductId) {
+                        return;
+                    }
+                    
+                    // Find the price elements
+                    var priceElements = product.querySelectorAll(".price, .old_price, .content_price .price");
+                    priceElements.forEach(function(priceElement) {
+                        // Get the current price
+                        var originalPrice = priceElement.textContent.trim();
+                        // Parse the price (remove currency symbol, etc.)
+                        var price = parseFloat(originalPrice.replace(/[^0-9.,]/g, "").replace(",", "."));
+                        if (!isNaN(price)) {
+                            // Apply a discount (for example, 10%)
+                            var discount = ' . $this->getMemberDiscountRate() . ';
+                            var discountedPrice = price * (1 - discount / 100);
+                            // Format the price (simple approach)
+                            var formattedPrice = originalPrice.replace(price.toString(), discountedPrice.toFixed(2));
+                            // Update the price
+                            priceElement.innerHTML = "<span class=\"original-price\" style=\"text-decoration: line-through; color: #999; font-size: 0.8em;\">" + originalPrice + "</span> <span class=\"member-price\" style=\"color: #c00;\">" + formattedPrice + "</span>";
+                        }
+                    });
+                });
+                
+                // Handle product page
+                if (typeof productPrice !== "undefined") {
+                    // Product page global variable
+                    var originalPrice = productPrice;
+                    var discount = ' . $this->getMemberDiscountRate() . ';
+                    var discountedPrice = originalPrice * (1 - discount / 100);
+                    
+                    // Override the productPrice variable
+                    productPrice = discountedPrice;
+                    
+                    // Update displayed prices
+                    var ourPriceElements = document.querySelectorAll("#our_price_display, .our_price_display");
+                    ourPriceElements.forEach(function(el) {
+                        var priceText = el.textContent.trim();
+                        var price = parseFloat(priceText.replace(/[^0-9.,]/g, "").replace(",", "."));
+                        if (!isNaN(price)) {
+                            var discountedPrice = price * (1 - discount / 100);
+                            var currencySymbol = priceText.replace(/[0-9.,]/g, "").trim();
+                            el.innerHTML = "<span class=\"original-price\" style=\"text-decoration: line-through; color: #999; font-size: 0.8em;\">" + priceText + "</span> <span class=\"member-price\" style=\"color: #c00;\">" + currencySymbol + " " + discountedPrice.toFixed(2) + "</span>";
+                        }
+                    });
+                }
+            });
+        </script>';
+    }
+    
+    // Generate and add the banner if needed
+    $banner = $this->renderSavingsBanner();
+    if (!empty($banner)) {
+        // Escape for JavaScript insertion
+        $banner = addslashes(str_replace(["\r", "\n"], '', $banner));
+        
+        // Add JavaScript to inject the banner
+        $output .= '<script type="text/javascript">
+            document.addEventListener("DOMContentLoaded", function() {
+                // Try to insert before the cart summary
+                var banner = \'' . $banner . '\';
+                
+                // Target common cart elements from various themes
+                var targets = [
+                    "#cart_summary",
+                    ".cart-overview",
+                    ".shopping_cart",
+                    ".cart-container",
+                    "#order-detail-content",
+                    ".delivery_options_address",
+                    ".checkout-step",
+                    "[id^=cart]",
+                    ".order-confirmation"
+                ];
+                
+                // Try each target
+                var inserted = false;
+                for (var i = 0; i < targets.length; i++) {
+                    var target = document.querySelector(targets[i]);
+                    if (target) {
+                        // Create a container
+                        var container = document.createElement("div");
+                        container.innerHTML = banner;
+                        target.parentNode.insertBefore(container, target);
+                        inserted = true;
+                        break;
+                    }
+                }
+                
+                // If all else fails, try appending to the body
+                if (!inserted) {
+                    console.log("MemberPrime: No target found, appending to body");
+                    var container = document.createElement("div");
+                    container.innerHTML = banner;
+                    container.style.margin = "20px 0";
+                    var body = document.querySelector("body");
+                    if (body) {
+                        body.appendChild(container);
+                    }
+                }
+            });
+        </script>';
+    }
+    
+    return $output;
+}
+
+/**
+ * Helper method to get the member discount rate
+ * Either from global group settings or a default of 10%
+ */
+private function getMemberDiscountRate(): float
+{
+    $groupId = (int)Configuration::get('MP_GROUP_ID');
+    if (!$groupId) {
+        return 10.0; // Default 10% discount
+    }
+    
+    // Try to get the group discount
+    $group = new Group($groupId);
+    if (Validate::isLoadedObject($group) && $group->reduction > 0) {
+        return (float)$group->reduction;
+    }
+    
+    // Default to 10% if no group discount is configured
+    return 10.0;
+}
 
     /* ------------ cart hooks ------------ */
     public function hookDisplayShoppingCartFooter() {
@@ -385,6 +792,15 @@ class Memberprime extends Module
         if ($cust->isLogged()) {
             $customerGroups = $cust->getGroups();
             $this->log("Customer in group: " . (in_array($grp, $customerGroups, true) ? 'Yes' : 'No'));
+            
+            // Make sure the customer is in the member group if they should be
+            if (isset($this->context->cookie->mp_temp_membership) && !in_array($grp, $customerGroups, true)) {
+                $this->log("Re-adding customer to member group based on cookie");
+                $cust->addGroups([$grp]);
+                
+                // Force the context to update
+                $this->context->customer = new Customer((int)$cust->id);
+            }
         }
 
         // Check if we should show the banner
@@ -393,9 +809,18 @@ class Memberprime extends Module
             return '';
         }
         
-        // If customer is already a member, don't show the banner
-        if ($cust->isLogged() && in_array($grp, $cust->getGroups(), true)) {
-            $this->log("Not showing banner - customer is already a member");
+        // If customer is already a permanent member, don't show any banner
+        $hasPermanentMembership = false;
+        if ($cust->isLogged()) {
+            $hasPermanentMembership = (bool)Db::getInstance()->getValue(
+                'SELECT COUNT(*) FROM `'._DB_PREFIX_."memberprime` 
+                WHERE id_customer = ".(int)$cust->id." 
+                AND expiration > NOW()"
+            );
+        }
+        
+        if ($hasPermanentMembership) {
+            $this->log("Not showing banner - customer is already a permanent member");
             return '';
         }
 
@@ -405,6 +830,49 @@ class Memberprime extends Module
             return '';
         }
         
+        // Check if membership product is already in cart
+        $membershipInCart = false;
+        foreach ($cart->getProducts() as $product) {
+            if ((int)$product['id_product'] === $prodId) {
+                $membershipInCart = true;
+                break;
+            }
+        }
+
+        // If membership is in cart, always show the member prices banner
+        if ($membershipInCart) {
+            $this->log("Showing member prices banner - membership product in cart");
+            
+            // Get the product link and fix any double slash issues
+            $productLink = $this->context->link->getProductLink($feeProduct);
+            $productLink = str_replace('://', '://', str_replace('//', '/', $productLink));
+            
+            $this->context->smarty->assign([
+                'membership_price' => Tools::displayPrice($feeProduct->getPrice()),
+                'membership_link' => $productLink,
+            ]);
+            
+            // Check if the member prices template exists
+            $templatePath = __DIR__ . '/views/templates/hook/memberPrices.tpl';
+            if (!file_exists($templatePath)) {
+                // Create the file if it doesn't exist
+                $content = '{*
+ * Banner shown in cart when membership product is in cart
+ * $membership_price
+ * $membership_link
+ *}
+<div class="memberprime-banner memberprime-active panel">
+  <p>
+    {l s=\'You are seeing Member prices! Complete your order to activate your membership for %s / year.\' sprintf=$membership_price mod=\'memberprime\'}
+  </p>
+</div>';
+                file_put_contents($templatePath, $content);
+            }
+            
+            // Render the member prices template
+            return $this->display(__FILE__, 'views/templates/hook/memberPrices.tpl');
+        }
+
         // Calculate normal price directly from the cart object
         $normalTotal = $cart->getOrderTotal(true, Cart::BOTH);
         $this->log("Normal total from cart: $normalTotal");
