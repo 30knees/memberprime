@@ -1,7 +1,7 @@
 <?php
 /*
  * Member Prime – paid membership that grants special prices
- * Compatible with thirty bees 1.4/1.5 (PHP 8.2) and PrestaShop 1.6
+ * Compatible with thirty bees 1.4 / 1.5 (PHP 8.2) and PrestaShop 1.6
  * Licence: Free
  */
 
@@ -33,7 +33,9 @@ class Memberprime extends Module
         parent::__construct();
 
         $this->displayName = $this->l('Member Prime');
-        $this->description = $this->l('Sell a paid membership that puts customers in a special group and shows savings in the cart.');
+        $this->description = $this->l(
+            'Sell a paid membership that puts customers in a special group and shows savings in the cart.'
+        );
     }
 
     /* ---------- install / uninstall ---------- */
@@ -159,9 +161,13 @@ class Memberprime extends Module
         }
 
         try {
-            $expiration = (new DateTime())->add(new DateInterval('P'.(int)$days.'D'))->format('Y-m-d H:i:s');
+            $expiration = (new DateTime())
+                ->add(new DateInterval('P'.(int)$days.'D'))
+                ->format('Y-m-d H:i:s');
         } catch (Exception $e) {
-            $expiration = (new DateTime())->add(new DateInterval('P365D'))->format('Y-m-d H:i:s');
+            $expiration = (new DateTime())
+                ->add(new DateInterval('P365D'))
+                ->format('Y-m-d H:i:s');
         }
 
         Db::getInstance()->execute('REPLACE INTO `'._DB_PREFIX_."memberprime`
@@ -213,9 +219,12 @@ class Memberprime extends Module
             $customer->addGroups([$memberGroup]);
         }
         $totalMember = $memberCart->getOrderTotal(true, Cart::BOTH);
+
         if ($customer->isLogged()) {
-            $customer->clearGroups();
-            $customer->addGroups($savedGroups);
+            $customer->cleanGroups();              // ← fixed: was clearGroups()
+            if ($savedGroups) {
+                $customer->addGroups($savedGroups);
+            }
         }
 
         $saving = $totalNormal - $totalMember;
@@ -245,8 +254,9 @@ class Memberprime extends Module
     public function cronPruneExpired(): void
     {
         $idGroup = (int)Configuration::get('MP_GROUP_ID');
-        $rows = Db::getInstance()->executeS('SELECT id_customer FROM `'._DB_PREFIX_."memberprime`
-                                             WHERE expiration < NOW()");
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_customer FROM `'._DB_PREFIX_."memberprime` WHERE expiration < NOW()"
+        );
         foreach ($rows as $row) {
             $idCust   = (int)$row['id_customer'];
             $customer = new Customer($idCust);
